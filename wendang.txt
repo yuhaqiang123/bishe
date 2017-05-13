@@ -1,0 +1,33 @@
+private void initialize(){
+		this.registerBean(ComponentExecutor.class, componentExecutor);
+		this.registerBean(ApplicationContext.class, this);
+		this.registerBean(BeanMetaContext.class, metas);
+		//获取自动扫描包的目录
+		autoScanPackage = (String[]) config.getProperty(ApplicationConfig.AUTO_SCAN_PACKAGE_KEY);
+		if(Utils.notEmpty(autoScanPackage)){
+			//获取包下所有的类
+			List<Class<?>> clazzList = ReflectUtil.getClasses(autoScanPackage);
+			//System.out.println(autoScanPackage);
+			//ArrayUtil.println(clazzList);
+			//获取所有添加Component注解的类
+			clazzList = baseScanComponentClass(clazzList);
+			//获取所有单例类
+			//clazzList = this.singletonBeans(clazzList);
+			publishConfigBeanClassEvent(clazzList);
+			//初始化所有 singleton Class实例
+			List list = initializeBeans(clazzList);
+			//ArrayUtil.println(list);
+			
+			//将componentExecutor和ApplicationContext放进去
+
+			//自动装配
+			autowireds(list);
+			
+			//解析aware和capable
+			awareAndCapable();
+			isRefresh = true;
+			
+		}else{
+			throw new BeanInitializationException("bean initialization has error happend , can not found autowird configs, please check");
+		}
+	}
