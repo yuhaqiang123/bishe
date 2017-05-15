@@ -1,33 +1,72 @@
-private void initialize(){
-		this.registerBean(ComponentExecutor.class, componentExecutor);
-		this.registerBean(ApplicationContext.class, this);
-		this.registerBean(BeanMetaContext.class, metas);
-		//获取自动扫描包的目录
-		autoScanPackage = (String[]) config.getProperty(ApplicationConfig.AUTO_SCAN_PACKAGE_KEY);
-		if(Utils.notEmpty(autoScanPackage)){
-			//获取包下所有的类
-			List<Class<?>> clazzList = ReflectUtil.getClasses(autoScanPackage);
-			//System.out.println(autoScanPackage);
-			//ArrayUtil.println(clazzList);
-			//获取所有添加Component注解的类
-			clazzList = baseScanComponentClass(clazzList);
-			//获取所有单例类
-			//clazzList = this.singletonBeans(clazzList);
-			publishConfigBeanClassEvent(clazzList);
-			//初始化所有 singleton Class实例
-			List list = initializeBeans(clazzList);
-			//ArrayUtil.println(list);
-			
-			//将componentExecutor和ApplicationContext放进去
+Public class Context{
+Public A(){//构造方法
+....
+Register();
+....
+}
 
-			//自动装配
-			autowireds(list);
-			
-			//解析aware和capable
-			awareAndCapable();
-			isRefresh = true;
-			
-		}else{
-			throw new BeanInitializationException("bean initialization has error happend , can not found autowird configs, please check");
-		}
-	}
+Public void register(){
+beforeRegister();
+.....
+afterRegister();
+}
+
+Protected void beforeRegister(){
+
+}
+Protected void afterRegister(){
+
+}
+
+}
+
+现在Context需要向外提供注册功能.但是实例化时，需要先注册一些服务。注册操作前后会　执行before方法和after方法，子类可以重写，向提供扩展注册功能
+
+于是乎，子类重写了before,after功能，蛋疼的空指针异常又出现了。
+为什么呢？因为
+Public class ChildContext{
+Private Map<String,Object> map = new HashMap<>();
+Protected void beforeRegister(){
+......
+Map.put();
+.....
+}
+
+Protected void afterRegister(){
+....
+//
+...
+}
+}
+子类重写了注册的before和after方法
+
+目的是　监听注册功能，维护了额外的数据结构（）。
+
+但是正是这个额外的数据结构触发了空指针异常。
+原因正是父类的构造方法中执行了子类重写的方法，
+而子类的重写方法中使用了自己的属性
+就像beforeRegister()方法中使用了map一样。
+
+但是map还没有初始化呢,还没有初始化呢.
+
+解决思路有好几种：
+
+1. 最简单的思路是将子类中的变量map声明为static，不就先于父类构造方法执行了吗？
+   的确解决了这个bug，但引入新的bug，我们提到过慎用static变量
+因为他属于整个类。不单单属于一个对象。那意味着所有的对象实例都共用这个static　map,　这是正确的逻辑吗？你考虑了吗？这个坑我还就犯过...
+最最重要的是，这个static map　在该进行垃圾回收时没法被回收。没准哪个时刻出现了　Out of　Memory　内存溢出，服务器宕机，然后领导查到了这个root　根节点大对象正是static map　!!!　[非洲凝视]
+
+２．有一个争议的实现方法
+父类构造方法中　先调用beforeInitialize
+同时beforeInitialize()，afterInitialize()方法供子类重写，
+这时子类就可以把属性初始化需求放到beforeInitialize()方法中。
+实现了父类对子类的依赖，实现子类属性　先于　父类初始化
+
+但是我们倒转了依赖。破坏了子类，父类初始化顺序。
+３．我们可以在beforeRegister中　判断属性变量是否为null，
+　　如果为null就初始化它。简单粗暴，
+但是我没有用这种方法。因为我想试试第二种方法到底会有多坑....
+４．还有好多方法...但是归根结底，我们是在构造方法中调用可重写方法倒置了子父类的依赖，让父类依赖于子类，与　Java面向对象的设计理念相冲突，才会出现这么多问题。
+建议：尽量不要在构造方法中调用可以可被重写的方法
+　　Public,protected方法尽可能少的出现在构造方法中
+”构造函数陷阱“：构造方法中调用可被的重写方法
